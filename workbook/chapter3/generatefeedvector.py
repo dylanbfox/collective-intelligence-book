@@ -1,4 +1,5 @@
 import feedparser
+import random
 import re
 
 # Returns title and dictionary of word counts for an RSS feed
@@ -21,7 +22,14 @@ def getwordcounts(url):
 			wordcount.setdefault(word, 0)
 			wordcount[word] += 1
 
-	return document.feed.title, wordcount
+	title_details = document['feed'].get('title_detail', None)
+
+	if title_details is None:
+		title = 'Untitled_%s' % str(random.randint(0, 100))
+	else:
+		title = title_details.get('value', 'Untitled_%s' % str(random.randint(0, 100)))
+
+	return title, wordcount
 
 def getwords(html):
 	# Remove all the HTML
@@ -38,7 +46,7 @@ blog_word_counts = {}
 feedlist = []
 
 for feedurl in file('feedlist.txt'):
-	feedlist.add(feedurl)
+	feedlist.append(feedurl)
 
 	# get the wordcount for the each individual blog
 	title, wordcount = getwordcounts(feedurl)
@@ -61,4 +69,26 @@ for word, appeard_count in word_appeared_count.items():
 	fraction = float(appeard_count) / len(feedlist)
 	if fraction > 0.1 and fraction < 0.5:
 		wordlist.append(word)
+
+# output data to file
+out = file('blogdata.txt' ,'w')
+out.write('Blog')
+
+for word in wordlist:
+	out.write('\t%s' % word)
+
+out.write('\n')
+for blog, wordcount in blog_word_counts.items():
+	print blog, type(blog)
+	blog = blog.encode('ascii', 'ignore')
+	out.write(blog)
+	for word in wordlist:
+		if word in wordcount:
+			out.write('\t%d' % wordcount[word])
+		else:
+			out.write('\t0')
+	out.write('\n')
+
+
+
 
