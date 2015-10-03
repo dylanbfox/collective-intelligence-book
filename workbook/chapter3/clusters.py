@@ -1,3 +1,4 @@
+import random
 from PIL import Image, ImageDraw
 
 class Bicluster(object):
@@ -221,10 +222,10 @@ def kcluster(rows, distance=pearson, k=4):
 						avgs[m] += rows[rowid][m]
 				for j in range(len(avgs)):
 					avgs[j] /= len(bestmatches[i])
-				
+
 				clusters[i] = avgs
 
 
-
+	return bestmatches
 
 
