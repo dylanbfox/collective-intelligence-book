@@ -1,42 +1,174 @@
 import urllib2
+import sqlite3
+import re
+
 from bs4 import BeautifulSoup
 from urlparse import urljoin
+
+ignore_words = set(['the', 'of', 'to', 'and', 'a', 'in', 'is', 'it'])
+
+class Searcher(object):
+	def __init__(self, dbname):
+		self.con = sqlite3.connect(dbname)
+
+	def __del__(self):
+		self.con.close()
+
+	def get_matching_rows(self, q):
+		# strings to build the query
+		fieldlist = 'w0.urlid'
+		tablelist = ''
+		clauselist = ''
+		wordids = []
+
+		# split the words by spaces
+		words = q.split(' ')
+		tablenumber = 0
+
+		for word in words:
+			# Get the word ID
+			wordrow = self.con.execute(
+				"select rowid from wordlist where word='%s'" % word).fetchone()
+
+			if wordrow != None:
+				wordid = wordrow[0]
+				wordids.append(wordid)
+				if tablenumber > 0:
+					tablelist += ','
+					clauselist += ' and '
+					clauselist += 'w%d.urlid=w%d.urlid and ' % (tablenumber-1, tablenumber)
+
+				fieldlist += ',w%d.location' % tablenumber
+				tablelist += 'wordlocation w%d' % tablenumber
+				clauselist += 'w%d.wordid=%d' % (tablenumber, wordid)
+				tablenumber += 1
+
+		# create query from the separate words
+		fullquery = "select %s from %s where %s" % (fieldlist, tablelist, clauselist)
+		cur = self.con.execute(fullquery)
+		rows = [row for row in cur]
+		return rows, wordids
 
 class Crawler(object):
 
 	def __init__(self, dbname):
-		pass
+		self.con = sqlite3.connect(dbname)
 
 	def __del__(self):
-		pass
+		self.con.close()
 
 	def db_commit(self):
-		pass
+		self.con.commit()
 
 	# aux function for getting an entry id and adding
 	# it if it's not present
 	def get_entry_id(self, table, field, value, createnew=True):
-		return None
+		cur = self.con.execute(
+			"select rowid from %s where %s='%s'" % (table, field, value)
+		)
+
+		result = cur.fetchone()
+
+		if result == None:
+			cur = self.con.execute(
+				"insert into %s (%s) values ('%s')" % (table, field, value)
+			)
+
+			return cur.lastrowid
+
+		else:
+			return result[0]
 
 	# index an individual page
 	def add_to_index(self, url, soup):
+		if self.is_indexed(url):
+			print "Skipping %s" % url
+			return
+
 		print "Indexing %s" % url
+
+		# get individual words
+		text = self.get_text_only(soup)
+		words = self.separate_words(text)
+
+		# get the url id
+		urlid = self.get_entry_id('urllist', 'url', url)
+
+		print "URL %s HAS %s WORDS" % (urlid, len(words))
+
+		# link each word to this url
+		for i in range(len(words)):
+			word = words[i]
+
+			if word in ignore_words:
+				continue
+
+			# makes an entry for the word if it doesnt exist, or gets
+			# its ID if it already exists 
+			wordid = self.get_entry_id('wordlist', 'word', word)
+
+			# adds new wordlocation reference
+			self.con.execute('insert into wordlocation(urlid, wordid, location) \
+				values(%d, %d, %d)' % (urlid, wordid, i))
 
 	# extract text from HTML page
 	def get_text_only(self, soup):
-		return None
+		"""
+		Returns a long string of all the text on the page.
+		"""
+		v = soup.string
+		if v == None:
+			c = soup.contents
+			result_text = ''
+			for t in c:
+				subtext = self.get_text_only(t)
+				result_text += subtext + '\n'
+			return result_text
+		else:
+			return v.strip()
 
 	# separate words by any non-whitespace char
 	def separate_words(self, text):
-		return None
+		splitter = re.compile('\\W*')
+		return [s.lower() for s in splitter.split(text) if s != '']
 
 	# return true if this url is already indexed
 	def is_indexed(self, url):
+		u = self.con.execute(
+			"select rowid from urllist where url='%s'" % url).fetchone()
+
+		if u != None:
+			# check if it has actually been crawled
+			v = self.con.execute(
+				"select * from wordlocation where urlid=%d" % u[0]).fetchone()
+			if v != None:
+				return True
+
 		return False
 
 	# add a link between two pages
 	def add_link_ref(self, url_from, url_to, link_text):
-		pass
+		words = self.separate_words(link_text)
+		fromid = self.get_entry_id('urllist', 'url', url_from)
+		toid = self.get_entry_id('urllist', 'url', url_to)
+
+		# cant link to itself
+		if fromid == toid:
+			return
+
+		cur = self.con.execute("insert into link(fromid, toid) values (%d, %d)" %
+			(fromid, toid))
+
+		linkid = cur.lastrowid
+		# store the words that were actually used in the link
+		for word in words:
+			if word in ignore_words:
+				continue
+
+			wordid = self.get_entry_id("wordlist", "word", word)
+
+			self.con.execute("insert into linkwords(linkid, wordid) values (%d,%d)" %
+				(linkid, wordid))
 
 	# starting with a list of pages, do a breadth
 	# first search to the given depth, indexing pages
@@ -49,7 +181,6 @@ class Crawler(object):
 				try:
 					c = urllib2.urlopen(page)
 				except:
-					print "Could not open %s" % page
 					continue
 
 				soup = BeautifulSoup(c.read())
@@ -58,7 +189,7 @@ class Crawler(object):
 				# get all the links on the page,
 				# which'll eventually become the
 				# pages we index
-				
+
 				links = soup('a')
 				for link in links:
 					if 'href' in dict(link.attrs):
@@ -79,4 +210,21 @@ class Crawler(object):
 
 	# create the database tables
 	def create_index_tables(self):
-		pass
+		self.con.execute('create table urllist(url)')
+		self.con.execute('create table wordlist(word)')
+		self.con.execute('create table wordlocation(urlid, wordid, location)')
+		self.con.execute('create table link(fromid integer, toid integer)')
+		self.con.execute('create table linkwords(wordid, linkid)')
+		self.con.execute('create index wordidx on wordlist(word)')
+		self.con.execute('create index urlidx on urllist(url)')
+		self.con.execute('create index wordurlidx on wordlocation(wordid)')
+		self.con.execute('create index urltoidx on link(toid)')
+		self.con.execute('create index urlfromidx on link(fromid)')
+		self.db_commit()
+
+
+
+
+
+
+
