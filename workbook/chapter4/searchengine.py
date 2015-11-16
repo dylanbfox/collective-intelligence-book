@@ -14,6 +14,87 @@ class Searcher(object):
 	def __del__(self):
 		self.con.close()
 
+	def normalizescores(self, scores, smallIsBetter=False):
+		"""
+		Results in vals between 0 and 1
+		"""
+		vsmall = 0.00001 
+
+		if smallIsBetter:
+			minscore = min(scores.values())
+
+			return dict([(u, float(minscore)/max(vsmall, l)) for
+				(u, l) in scores.items()])
+
+		else:
+			maxscore = max(scores.values())
+
+			if maxscore == 0:
+				maxscore = vsmall
+
+			return dict([(u, float(c)/maxscore) for 
+				(u, c) in scores.items()])
+
+	def frequencyscore(self, rows):
+		counts = dict([(row[0], 0) for row in rows])
+
+		for row in rows:
+			counts[row[0]] += 1
+
+		return self.normalizescores(counts)
+
+	def locationscore(self, rows):
+		locations = dict([(row[0], 1000000) for row in rows])
+
+		for row in rows:
+			loc = sum(row[1:])
+
+			if loc < locations[row[0]]:
+				locations[row[0]] = loc
+
+
+		return self.normalizescores(locations, smallIsBetter=True)
+
+	def distancescore(self, rows):
+		if len(rows[0]) <= 2:
+			return dict([(row[0], 1.0) for row in rows])
+
+		mindistance = dict([(row[0], 1000000) for row in rows])
+
+		for row in rows:
+			dist = sum([abs(row[i] - row[i-1]) for i in range(2, len(row))])
+
+			if dist < mindistance[row[0]]:
+				mindistance[row[0]] = dist
+
+		return self.normalizescores(mindistance, smallIsBetter=True)
+
+	def getscoredlist(self, rows, wordids):
+		totalscores = dict([(row[0], 0) for row in rows])
+
+		weights = [(1.0, self.frequencyscore(rows)),
+				   (1.5, self.locationscore(rows)),
+				   (1.0, self.distancescore(rows))]
+
+		for (weight, scores) in weights:
+			for url in totalscores:
+				totalscores[url] += weight*scores[url]
+
+		return totalscores
+
+	def geturlname(self, id):
+		return self.con.execute(
+			"select url from urllist where rowid=%d" %id).fetchone()[0]
+
+	def query(self, q):
+		rows, wordids = self.get_matching_rows(q)
+		scores = self.getscoredlist(rows, wordids)
+
+		rankedscores = sorted([(score, url) for (url, score) in scores.items()], reverse=1)
+
+		for (score, urlid) in rankedscores[0:15]:
+			print "%f\t%s" % (score, self.geturlname(urlid))
+
 	def get_matching_rows(self, q):
 		# strings to build the query
 		fieldlist = 'w0.urlid'
