@@ -35,6 +35,17 @@ class Searcher(object):
 			return dict([(u, float(c)/maxscore) for 
 				(u, c) in scores.items()])
 
+	def pagerankscore(self, rows):
+		pageranks = dict([(row[0], 
+			self.con.execute("select score from pagerank where urlid=%d" 
+				% row[0]).fetchone()[0]) for row in rows])
+
+		maxrank = max(pageranks.values())
+		normalizedscores = dict([(u, float(l)/maxrank) for (u,l) in
+			pageranks.items()])
+
+		return normalizedscores
+
 	def frequencyscore(self, rows):
 		counts = dict([(row[0], 0) for row in rows])
 
@@ -56,6 +67,7 @@ class Searcher(object):
 		return self.normalizescores(locations, smallIsBetter=True)
 
 	def distancescore(self, rows):
+		# if there's only one word ,
 		if len(rows[0]) <= 2:
 			return dict([(row[0], 1.0) for row in rows])
 
@@ -73,8 +85,9 @@ class Searcher(object):
 		totalscores = dict([(row[0], 0) for row in rows])
 
 		weights = [(1.0, self.frequencyscore(rows)),
-				   (1.5, self.locationscore(rows)),
-				   (1.0, self.distancescore(rows))]
+				   (1.0, self.locationscore(rows)),
+				   (1.0, self.distancescore(rows)),
+				   (1.0, self.pagerankscore(rows))]
 
 		for (weight, scores) in weights:
 			for url in totalscores:
@@ -288,6 +301,39 @@ class Crawler(object):
 				self.db_commit()
 
 			pages = newpages
+
+	def calculatepagerank(self, iterations=20):
+		# clear out the current pagerank tables
+		self.con.execute('drop table if exists pagerank')
+		self.con.execute('create table pagerank(urlid primary key, score)')
+
+		# init every url with a pagerank of 1
+		self.con.execute('insert into pagerank select rowid, 1.0 from urllist')
+		self.db_commit()
+
+		for i in range(iterations):
+			print "Iteration %d" % i
+			for (urlid,) in self.con.execute('select rowid from urllist'):
+				pr = 0.15
+
+				# Loop thru all pages that link to this one
+				for (linker, ) in self.con.execute(
+					"select distinct fromid from link where toid=%d" % urlid):
+					# get pagerank of linker
+					linkingpr = self.con.execute(
+						"select score from pagerank where urlid=%d" % linker).fetchone()[0]
+
+
+					# get total number of links from linker
+					linkingcount = self.con.execute(
+						"select count(*) from link where fromid=%d" % linker).fetchone()[0]
+
+					pr += 0.85 * (linkingpr / linkingcount)
+
+				self.con.execute(
+					"update pagerank set score=%f where urlid=%d" % (pr, urlid))
+
+				self.db_commit()
 
 	# create the database tables
 	def create_index_tables(self):
