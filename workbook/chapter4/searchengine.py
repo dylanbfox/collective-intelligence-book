@@ -81,13 +81,37 @@ class Searcher(object):
 
 		return self.normalizescores(mindistance, smallIsBetter=True)
 
+	def linktextscore(self, rows, wordids):
+		linkscores = dict([(row[0], 0) for row in rows])
+
+		for wordid in wordids:
+			cur = self.con.execute(
+				"select link.fromid, link.toid from linkwords, link where wordid=%d \
+				and linkwords.linkid=link.rowid" % wordid)
+
+			for (fromid, toid) in cur:
+				if toid in linkscores:
+					pr = self.con.execute("select score from \
+						pagerank where urlid=%d" % fromid).fetchone()[0]
+
+					linkscores[toid] += pr
+
+
+		maxscore = max(linkscores.values())
+		print maxscore
+		normalizedscores = dict([(u, float(l)/maxscore) for (u, l)
+			in linkscores.items()])
+
+		return normalizedscores
+
 	def getscoredlist(self, rows, wordids):
 		totalscores = dict([(row[0], 0) for row in rows])
 
 		weights = [(1.0, self.frequencyscore(rows)),
 				   (1.0, self.locationscore(rows)),
 				   (1.0, self.distancescore(rows)),
-				   (1.0, self.pagerankscore(rows))]
+				   (1.0, self.pagerankscore(rows)),
+				   (1.0, self.linktextscore(rows, wordids))]
 
 		for (weight, scores) in weights:
 			for url in totalscores:
