@@ -84,3 +84,72 @@ class SearchNet(object):
 				self.set_strength(hiddenid, urlid, 1, 0.1)
 
 			self.con.commit()
+
+	def get_all_hidden_ids(self, wordids, urlids):
+		l1 = {}
+
+		for wordid in wordids:
+			cur = self.con.execute(
+				'select toid from wordhidden where fromid=%d' %
+				wordid)
+
+			for row in cur:
+				l1[row[0]] = 1
+
+		for urlid in urlids:
+			cur = self.con.execute(
+				'select fromid from hiddenurl where toid=%d' %
+				urlid)
+
+			for row in cur:
+				l1[row[0]] = 1
+
+		return l1.keys()
+
+	def setup_network(self, wordids, urlids):
+		# value lists
+		self.wordids = wordids
+		self.hiddenids = self.get_all_hidden_ids(wordids, urlids)
+		self.urlids = urlids
+
+		# node outputs
+		self.ai = [1.0] * len(self.wordids)
+		self.ah = [1.0] * len(self.hiddenids)
+		self.ao = [1.0] * len(self.urlids)
+
+		# create weights matrix
+		self.wi = [[self.get_strength(wordid, hiddenid, 0)
+					for hiddenid in self.hiddenids]
+					for wordid in self.wordids]
+
+		self.wo = [[self.get_strength(hiddenid, urlid, 1)
+					for urlid in self.urlids]
+					for hiddenid in self.hiddenids]
+
+	def feedforward(self):
+		# only inputs in first layer are the query words
+		for i in range(len(self.wordids)):
+			self.ai[i] = 1.0
+
+		# hidden activations
+		for j in range(len(self.hiddenids)):
+			sum = 0.0
+			for i in range(len(self.wordids)):
+				sum = sum + self.ai[i] * self.wi[i][j]
+
+			self.ah[j] = tanh(sum)
+
+		# output activations
+		for k in range(len(self.urlids)):
+			sum = 0.0
+			for j in range(len(self.hiddenids)):
+				sum = sum + self.ah[j] * self.wo[j][k]
+
+			self.ao[k] = tanh(sum)
+
+		# a copy of output layer after feedforward algo
+		return self.ao[:]
+
+	def get_result(self, wordids, urlids):
+		self.setup_network(wordids, urlids)
+		return self.feedforward()
