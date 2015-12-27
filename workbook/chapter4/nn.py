@@ -16,6 +16,8 @@ class SearchNet(object):
 		 self.con.execute('create table hiddenurl(fromid, toid, strength)')
 		 self.con.commit()
 
+	def dtanh(self, y):
+		return 1.0 - y*y
 
 	def get_strength(self, fromid, toid, layer):
 		if layer == 0:
@@ -134,6 +136,7 @@ class SearchNet(object):
 		# hidden activations
 		for j in range(len(self.hiddenids)):
 			sum = 0.0
+
 			for i in range(len(self.wordids)):
 				sum = sum + self.ai[i] * self.wi[i][j]
 
@@ -149,6 +152,58 @@ class SearchNet(object):
 
 		# a copy of output layer after feedforward algo
 		return self.ao[:]
+
+	def back_propagate(self, targets, N=0.5):
+		# calculate erros for output
+		output_deltas = [0.0] * len(self.urlids)
+		for k in range(len(self.urlids)):
+			error = targets[k] - self.ao[k] # self.ao is the output layer
+			output_deltas[k] = self.dtanh(self.ao[k]) * error
+
+		# calculate errors for hidden layer
+		hidden_deltas = [0.0] * len(self.hiddenids)
+		for j in range(len(self.hiddenids)):
+			error = 0.0
+			for k in range(len(self.urlids)):
+				# change output node by sum of strength of each
+				# output link (self.urlids) multuplied by  
+				error = error + output_deltas[k]*self.wo[j][k]
+			hidden_deltas[j] = self.dtanh(self.ah[j]) * error
+
+		# update output weights
+		for j in range(len(self.hiddenids)):
+			for k in range(len(self.urlids)):
+				change = output_deltas[k] * self.ah[j]
+				self.wo[j][k] = self.wo[j][k] + N*change
+
+		# update input weights
+		for i in range(len(self.wordids)):
+			for j in range(len(self.hiddenids)):
+				change = hidden_deltas[j] * self.ai[i]
+				self.wi[i][j] = self.wi[i][j] + N*change
+
+	def train_network(self, wordids, urlids, selected_url):
+		# generate hidden node if necessary
+		self.generate_hidden_node(wordids, urlids)
+
+		self.setup_network(wordids, urlids)
+		self.feedforward()
+		targets = [0.0] * len(urlids)
+		targets[urlids.index(selected_url)] = 1.0
+		self.back_propagate(targets)
+		self.update_database()
+
+	def update_database(self):
+		# set them to db vals
+		for i in range(len(self.wordids)):
+			for j in range(len(self.hiddenids)):
+				self.set_strength(self.wordids[i], self.hiddenids[j], 0, self.wi[i][j])
+
+		for j in range(len(self.hiddenids)):
+			for k in range(len(self.urlids)):
+				self.set_strength(self.hiddenids[j], self.urlids[k], 1, self.wo[j][k])
+
+		self.con.commit()
 
 	def get_result(self, wordids, urlids):
 		self.setup_network(wordids, urlids)
