@@ -15,7 +15,7 @@ def get_words(doc):
 
 	return unique_words
 
-class Classifier:
+class Classifier(object):
 
 	def __init__(self, get_features_method, filename=None):
 		# counts of feature/category combinations
@@ -101,6 +101,11 @@ class Classifier:
 
 	def weighted_prob(self, feature, category, prob_func, 
 					 weight=1.0, assumed_prob=0.5):
+		"""
+		Assumed probability (assumed_prob) is the probability
+		of a feature of a feature when you have very little
+		information about it.
+		"""
 
 		# calculate the current probability of
 		# feature X for category Y
@@ -115,10 +120,62 @@ class Classifier:
 		# basic_prob is what the actual ratio of 
 		# feature_count/items is for a specific category
 		# ... eg (1/1) for "money" appearing in 1 "bad" document
-		# and then we weigh this down based off assumed_prob
-		# and get it closer to 0 or 1
+		# and then we weight this probability down based off 
+		# assumed_prob and get it closer to 0 or 1
 		weighted_prob = ((weight * assumed_prob) + (total * basic_prob)) / (weight + total)
 		return weighted_prob
+
+class NaiveBayesClassifier(Classifier):
+	"""
+	Assume probability of an entire document
+	given a classification. Assume probabilities
+	of individual features are independent of one
+	another.
+	"""
+
+	def doc_prob(self, item, category):
+		"""
+		Probability of Document given Category.
+
+		P(Document | Category)
+
+		ie: given category, calculate probability
+		document appears in it.
+
+		Done by summing all individual feature
+		probabilities...
+
+			ie, P(Word | Category) -> probability Word appears in Category
+
+		...together to get an overall probability
+		"""
+		features = self.get_features_method(item)
+
+		# multiply probabilities of all the features together
+		prob = 1
+		for f in features:
+			prob *= self.weighted_prob(f, category, self.feature_prob)
+
+		return prob
+
+	def category_prob(self, item, category):
+		"""
+		Apply Bayes' Theorem to get
+
+		P(Category | Document)
+
+		ie: given a specific document, calculate
+		probability it fits into this category.
+		"""
+
+		# probability this Category is randomly chosen
+		category_prob = self.get_category_items_count(category) / self.get_total_items_count()
+
+		# probability that Document appears in Category, given Category 
+		doc_prob = self.doc_prob(item, category)
+		print "doc_prob: %s" % doc_prob
+		print "bayes prob: %s" % (doc_prob * category_prob)
+		return doc_prob * category_prob
 
 def test_populate(classifier):
 	classifier.train('Nobody owns the water.', 'good')
