@@ -17,7 +17,7 @@ def get_words(doc):
 
 class Classifier(object):
 
-	def __init__(self, get_features_method, filename=None):
+	def __init__(self, get_features_method):
 		# counts of feature/category combinations
 		self.feature_counts = {}
 
@@ -27,6 +27,17 @@ class Classifier(object):
 		# feature extraction method
 		self.get_features_method = get_features_method
 
+		# thresholds
+		self.thresholds = {}
+
+	def set_threshold(self, category, threshold):
+		self.thresholds[category] = threshold
+
+	def get_threshold(self, category):
+		if category not in self.thresholds:
+			return 1.0
+
+		return self.thresholds[category]
 
 	# increase count of a feature/category pair
 	def increase_feature_count(self, feature, category):
@@ -139,8 +150,8 @@ class NaiveBayesClassifier(Classifier):
 
 		P(Document | Category)
 
-		ie: given category, calculate probability
-		document appears in it.
+		Probability of seeing Document, given Category
+		(ie: probability of data, given hypothesis)
 
 		Done by summing all individual feature
 		probabilities...
@@ -162,7 +173,8 @@ class NaiveBayesClassifier(Classifier):
 		"""
 		Apply Bayes' Theorem to get
 
-		P(Category | Document)
+		P(Category | Document) = P(Document | Category) * P(Category)
+		(ie: probablity of hypothesis, given the data)
 
 		ie: given a specific document, calculate
 		probability it fits into this category.
@@ -175,7 +187,33 @@ class NaiveBayesClassifier(Classifier):
 		doc_prob = self.doc_prob(item, category)
 		print "doc_prob: %s" % doc_prob
 		print "bayes prob: %s" % (doc_prob * category_prob)
-		return doc_prob * category_prob
+		return doc_prob * category_prob	
+
+	def classify(self, item, default=None):
+		max = 0.0
+		probs = {}
+		for category in self.get_categories():
+			probs[category] = self.category_prob(item, category)
+			if probs[category] > max:
+				max = probs[category]
+				best = category
+
+		# make sure prob fo winner exceeds threshold
+		for category in probs:
+			if category == best:
+				continue
+
+			# any probablity * winner's threshold multipler
+			# must be less than winner's confidence
+			# eg, if 'A' has a threshold of 3, it must
+			# be 3x as confident as the next best category
+			# so if 'A' is 30 but the next best 'B' is 15,
+			# 15 * 3 > 30 ... so the threshold is not met
+			# and the label is returned as 'unknown'
+			if probs[category] * self.get_threshold(best) > probs[best]:
+				return default
+
+		return best
 
 def test_populate(classifier):
 	classifier.train('Nobody owns the water.', 'good')
