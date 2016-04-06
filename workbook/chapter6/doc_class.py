@@ -215,6 +215,77 @@ class NaiveBayesClassifier(Classifier):
 
 		return best
 
+class FisherClassifier(Classifier):
+
+	def __init__(self, getfeatures):
+		Classifier.__init__(self, getfeatures)
+		self.minimums = {}
+
+	def setminimum(self, cat, min):
+		self.minimums[cat] = min
+
+	def getminimum(self, cat):
+		if cat not in self.minimums:
+			return 0
+
+		return self.minimums[cat]
+
+	def classify(self, item, default=None):
+		# loop through each looking for best result
+		best = default
+		max = 0.0
+		for c in self.get_categories():
+			p = self.fisher_prob(item, c)
+			
+			# make sure p exceeds minimum
+			if p > self.getminimum(c) and p > max:
+				best = c
+				max = p
+
+		return best
+
+	def cprob(self, f, cat):
+		"""
+		Probablity of feature given category.
+		"""
+		# frequency of this feature in this category
+		clf = self.feature_prob(f, cat)
+		if clf == 0:
+			return 0
+
+		# frequency of this feature in all categories
+		freq_sum = sum([self.feature_prob(f, c) 
+						for c in self.get_categories()])
+
+		# probability is the frequency in this category
+		# divided by the overall frequency
+		p = clf/freq_sum
+
+		return p
+
+	def fisher_prob(self, item, cat):
+		# multiply all the probabilities together
+		p = 1
+
+		features = self.get_features_method(item)
+		for f in features:
+			p *= self.weighted_prob(f, cat, self.cprob)
+
+		# take natural log and multiply by -2
+		fscore = -2*math.log(p)
+
+		# use inverse chi2 function to get probability
+		prob = self.invchi2(fscore, len(features)*2)
+
+	def invchi2(self, chi, df):
+		m = chi / 2.0
+		sum = term = math.exp(-m)
+		for i in range(1, df//2):
+			term *= m / i
+			sum += term
+
+		return min(sum, 1.0)
+
 def test_populate(classifier):
 	classifier.train('Nobody owns the water.', 'good')
 	classifier.train('the quick rabbit jumps fences', 'good')
