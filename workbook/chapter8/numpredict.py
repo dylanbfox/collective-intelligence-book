@@ -35,7 +35,6 @@ def wineprice(rating, age):
 
 	return price
 
-
 def wineset1():
 	rows = []
 	for i in range(300):
@@ -63,3 +62,114 @@ def euclidian(v1, v2):
 		d += (v1[i] - v2[i]) ** 2
 
 	return math.sqrt(d)
+
+def getdistances(data, vec1):
+	"""
+	Get distances between a given vector,
+	vec1, and every item in the dataset.
+	"""
+	distancelist = []
+	for i in range(len(data)):
+		vec2 = data[i]['input']
+		distancelist.append((euclidian(vec1, vec2), i))
+	distancelist.sort()
+	return distancelist
+
+def kNNestimate(data, vec1, k=5):
+	# get sorted distances
+	dlist = getdistances(data, vec1)
+	avg = 0.0
+
+	# take the average of the top k results
+	for i in range(k):
+		idx = dlist[i][1]
+		avg += data[idx]['result']
+
+	avg = avg/k
+	return avg
+
+def weightedkNNestimate(data, vec1, k=5, weightf=gaussian):
+	# get sorted distances
+	dlist = getdistances(data, vec1)
+	avg = 0.0
+	totalweight = 0.0
+
+	# get weighted average
+	for i in range(k):
+		dist = dlist[i][0]
+		idx = dlist[i][1]
+
+		weight = weightf(dist)
+		avg += weight * data[idx]['result']
+		totalweight += weight
+
+	avg = avg/totalweight
+	return avg
+
+def inverseweight(dist, num=1.0, const=0.1):
+	return num/(dist+const)
+
+def subtractweight(dist, const=1.0):
+	if dist > const:
+		return 0
+
+	else:
+		return const - dist
+
+def gaussian(dist, sigma=10.0):
+	return math.e**(-dist**2/(2*sigma**2))
+
+
+def dividedata(data, test=0.5):
+	trainset = []
+	testset = []
+
+	for row in data:
+		if random() < test:
+			testset.append(row)
+		else:
+			trainset.append(row)
+
+	return trainset, testset
+
+def testalgorithm(algf, trainset, testset):
+	error = 0.0
+	for row in testset:
+		# get distance between sample from test set
+		# and all the samples in the train set and
+		# make a prediction on the price using algf
+		guess = algf(trainset, row['input'])
+
+		# square error to widen difference between
+		# small and large errors
+		error += (row['result'] - guess)**2
+
+	return error / len(testset)
+
+def crossvalidate(algf, data, trials=100, test=0.05):
+	error = 0.0
+	for i in range(trials):
+		trainset, testset = dividedata(data, test)
+		error += testalgorithm(algf, trainset, testset)
+
+	# get average of the error scores for
+	# all the trials
+	return error / trials 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
