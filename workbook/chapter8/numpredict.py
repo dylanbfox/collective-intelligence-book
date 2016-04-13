@@ -88,24 +88,6 @@ def kNNestimate(data, vec1, k=5):
 	avg = avg/k
 	return avg
 
-def weightedkNNestimate(data, vec1, k=5, weightf=gaussian):
-	# get sorted distances
-	dlist = getdistances(data, vec1)
-	avg = 0.0
-	totalweight = 0.0
-
-	# get weighted average
-	for i in range(k):
-		dist = dlist[i][0]
-		idx = dlist[i][1]
-
-		weight = weightf(dist)
-		avg += weight * data[idx]['result']
-		totalweight += weight
-
-	avg = avg/totalweight
-	return avg
-
 def inverseweight(dist, num=1.0, const=0.1):
 	return num/(dist+const)
 
@@ -119,8 +101,7 @@ def subtractweight(dist, const=1.0):
 def gaussian(dist, sigma=10.0):
 	return math.e**(-dist**2/(2*sigma**2))
 
-
-def dividedata(data, test=0.5):
+def dividedata(data, test=0.05):
 	trainset = []
 	testset = []
 
@@ -154,11 +135,25 @@ def crossvalidate(algf, data, trials=100, test=0.05):
 
 	# get average of the error scores for
 	# all the trials
-	return error / trials 
+	return error / trials
 
+def weightedkNNestimate(data, vec1, k=5, weightf=gaussian):
+	# get sorted distances
+	dlist = getdistances(data, vec1)
+	avg = 0.0
+	totalweight = 0.0
 
+	# get weighted average
+	for i in range(k):
+		dist = dlist[i][0]
+		idx = dlist[i][1]
 
+		weight = weightf(dist)
+		avg += weight * data[idx]['result']
+		totalweight += weight
 
+	avg = avg/totalweight
+	return avg
 
 
 
